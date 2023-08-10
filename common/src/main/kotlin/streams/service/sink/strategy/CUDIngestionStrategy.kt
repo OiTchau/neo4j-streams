@@ -41,13 +41,13 @@ data class CUDNodeRel(val ids: Map<String, Any?> = emptyMap(),
 
 data class CUDRelationship(override val op: CUDOperations,
                            override val properties: Map<String, Any?> = emptyMap(),
-                           val ids: Map<String, Any?>,
+                           val ids: Map<String, Any?>?,
                            val rel_type: String,
                            val from: CUDNodeRel,
                            val to: CUDNodeRel): CUD() {
     override val type = EntityType.relationship
 
-    fun toMap(): Map<String, Any> {
+    fun toMap(): Map<String, Any?> {
         val from = mapOf("ids" to from.ids)
         val to = mapOf("ids" to to.ids)
         return when (op) {
@@ -113,12 +113,12 @@ class CUDIngestionStrategy: IngestionStrategy {
         """.trimMargin()
 
     private fun buildRelMergeStatement(from: NodeRelMetadata, to: NodeRelMetadata,
-                                        rel_type: String, ids: Map<String, Any?>): String = """
+                                        rel_type: String, ids: Map<String, Any?>?): String = """
             |${StreamsUtils.UNWIND}
             |${buildNodeLookupByIds(keyword = from.getOperation(), ids = from.ids, labels = from.labels, identifier = FROM_KEY, field = FROM_KEY)}
             |${StreamsUtils.WITH_EVENT_FROM}
             |${buildNodeLookupByIds(keyword = to.getOperation(), ids = to.ids, labels = to.labels, identifier = TO_KEY, field = TO_KEY)}
-            |MERGE ($FROM_KEY)-[r:${rel_type.quote()} {${getNodeKeysAsString(prefix = ID_KEY, keys = ids.map { it.key }.toSet())}}]->($TO_KEY)
+            |MERGE ($FROM_KEY)-[r:${rel_type.quote()}${buildIdsNode(ids)}]->($TO_KEY)
             |SET r += event.properties
         """.trimMargin()
 
@@ -144,13 +144,18 @@ class CUDIngestionStrategy: IngestionStrategy {
         """.trimMargin()
 
     private fun buildRelDeleteStatement(from: NodeRelMetadata, to: NodeRelMetadata,
-                                        rel_type: String, ids: Map<String, Any?>): String = """
+                                        rel_type: String, ids: Map<String, Any?>?): String = """
             |${StreamsUtils.UNWIND}
             |${buildNodeLookupByIds(ids = from.ids, labels = from.labels, identifier = FROM_KEY, field = FROM_KEY)}
             |${buildNodeLookupByIds(ids = to.ids, labels = to.labels, identifier = TO_KEY, field = TO_KEY)}
-            |MATCH ($FROM_KEY)-[r:${rel_type.quote()} {${getNodeKeysAsString(prefix = ID_KEY, keys = ids.map { it.key }.toSet())}}]->($TO_KEY)
+            |MATCH ($FROM_KEY)-[r:${rel_type.quote()}${buildIdsNode(ids)}]->($TO_KEY)
             |DELETE r
         """.trimMargin()
+
+    private fun buildIdsNode(ids: Map<String, Any?>?): String {
+        if (ids.isNullOrEmpty()) return ""
+        return " {${getNodeKeysAsString(prefix = ID_KEY, keys = ids.map { it.key }.toSet())}}"
+    }
 
     private inline fun <reified T: CUD> toCUDEntity(it: Any): T? {
         return when (it) {
